@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import Optional
 
 from src.models.account import ChartOfAccounts
-# These will be implemented later:
-# from src.data.input_processor import TransactionProcessor
-# from src.matching.matcher import MatchingEngine
-# from src.data.output_generator import OutputGenerator
+from src.data.input_processor import TransactionProcessor
+from src.matching.matcher import MatchingEngine
+from src.matching.rule_matcher import RuleMatcher
+from src.data.output_generator import OutputGenerator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,23 +62,27 @@ def main():
     logger.info("Loading chart of accounts...")
     chart = ChartOfAccounts.from_json_file(args.chart_of_accounts)
     
-    # Initialize components (to be implemented)
-    # processor = TransactionProcessor()
-    # matcher = MatchingEngine(chart)
-    # output_gen = OutputGenerator()
+    # Initialize components
+    processor = TransactionProcessor()
+    matcher = MatchingEngine(chart)
+    output_gen = OutputGenerator()
+    
+    # Add rule-based matcher
+    rule_matcher = RuleMatcher(chart)
+    matcher.add_matcher(rule_matcher)
     
     # Process input file
     logger.info(f"Processing input file: {args.input_file}")
-    # transactions = processor.read_file(args.input_file)
+    transactions = processor.read_file(args.input_file)
     
     # Match transactions
     logger.info("Matching transactions to accounts...")
-    # matched_transactions = matcher.process_transactions(transactions)
+    matched_transactions = matcher.process_transactions(transactions)
     
     # Generate output
     output_path = get_output_path(args.input_file, args.output)
     logger.info(f"Generating output file: {output_path}")
-    # output_gen.generate_file(matched_transactions, output_path)
+    output_gen.generate_file(matched_transactions, output_path)
     
     logger.info("Processing complete!")
 
