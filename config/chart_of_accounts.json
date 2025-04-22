@@ -1,0 +1,106 @@
+{
+  "chartOfAccounts": [
+    {
+      "number": "1000",
+      "name": "ASSETS",
+      "children": [
+        {
+          "number": "1010",
+          "name": "Checking Account"
+        }
+      ]
+    },
+    {
+      "number": "2000",
+      "name": "LIABILITIES",
+      "children": [
+        {
+          "number": "2100",
+          "name": "Credit Cards",
+          "children": [
+            {
+              "number": "2110",
+              "name": "Chase Credit Card Payable XXXX"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": "3000",
+      "name": "EQUITY",
+      "children": [
+        {
+          "number": "3110",
+          "name": "Owner Investment / Contribution"
+        },
+        {
+          "number": "3210",
+          "name": "Owner Draw / Distribution"
+        }
+      ]
+    },
+    {
+      "number": "4000",
+      "name": "INCOME",
+      "children": [
+        {
+          "number": "4010",
+          "name": "Service Revenue"
+        }
+      ]
+    },
+    {
+      "number": "5000",
+      "name": "COST OF GOODS SOLD",
+      "children": [
+        {
+          "number": "5010",
+          "name": "Cost of Materials/Purchases"
+        }
+      ]
+    },
+    {
+      "number": "6000",
+      "name": "EXPENSES",
+      "children": [
+        {
+          "number": "6010",
+          "name": "Advertising & Marketing"
+        },
+        {
+          "number": "6510",
+          "name": "Dues & Subscriptions"
+        },
+        {
+           "number": "6810",
+           "name": "Professional Fees - Accounting"
+        },
+        {
+          "number": "6910",
+          "name": "Meals & Entertainment"
+        },
+        {
+          "number": "7010",
+          "name": "Office Supplies"
+        },
+        {
+           "number": "7020",
+           "name": "Supplies - General"
+        },
+        {
+          "number": "7410",
+          "name": "Software & Subscriptions"
+        },
+        {
+           "number": "7610",
+           "name": "Telephone & Internet"
+        },
+        {
+          "number": "9000",
+          "name": "Miscellaneous Expense"
+        }
+      ]
+    }
+  ]
+} 

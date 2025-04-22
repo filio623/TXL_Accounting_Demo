@@ -1,0 +1,2 @@
+# Core dependencies
+# To be filled in as we add dependencies 
