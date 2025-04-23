@@ -25,15 +25,19 @@ This document tracks the development progress and plans for the TXL Accounting D
    - ✅ `mapping_store.py`: Store successful matches (JSON implementation complete)
    - ✅ `rule_store.py`: Store matching rules (JSON implementation complete)
 
-2. Enhanced Rule Matching ⏳
-   - This will build upon the basic rule matching in Phase 1
+2. Enhanced Rule Matching 🔄
+   - 🔄 Implement mapping-first logic in `RuleMatcher`
+   - ⏳ Address ambiguous mappings (e.g., same description, different accounts)
+   - ⏳ Add other heuristics/enhancements
 
 3. Initial Confidence Scoring ✅
    - ✅ `confidence.py`: Calculate match confidence (basic implementation complete)
 
 ### Phase 3: AI Integration
-1. AI/LLM Integration (src/matching/) ⏳
-   - ⏳ `llm_matcher.py`: LLM-based matching logic (file exists but empty)
+1. AI/LLM Integration (src/matching/) 🔄
+   - 🔄 `llm_matcher.py`: LLM-based matching logic (Basic structure created, model set to gpt-4o-mini)
+   - ⏳ Implement actual LLM API calls and parsing
+   - ⏳ Refine LLM prompt engineering
 
 2. Advanced Confidence Scoring ⏳
    - This will build upon the basic confidence scoring from Phase 2
@@ -54,12 +58,13 @@ This document tracks the development progress and plans for the TXL Accounting D
 
 ## Current Status
 - ✅ Completed: 9 components
-- 🔄 In Progress: 2 components
+- 🔄 In Progress: 4 components
 - ⏳ Pending: 4 components
 
 ## Next Steps
-1. Implement Enhanced Rule Matching logic
+1. Implement mapping-first logic in `RuleMatcher` (part of Enhanced Rule Matching)
 2. Enhance confidence scoring logic (e.g., consider amount, type)
+3. Flesh out `LLMMatcher` implementation (API calls, parsing)
 
 ## Legend
 - ✅ Completed
@@ -74,4 +79,6 @@ This document tracks the development progress and plans for the TXL Accounting D
 - Testing coverage has been improved across all Phase 1 components
 - Basic confidence scoring implemented and integrated into RuleMatcher.
 - Rule persistence implemented using `RuleStore` (JSON).
-- Mapping persistence implemented using `MappingStore` (JSON). 
+- Mapping persistence implemented using `MappingStore` (JSON).
+- Current enhancement: Adding mapping-first check to `RuleMatcher`. Known limitation: simple mapping cannot handle same description mapping to multiple accounts; solution deferred.
+- Basic structure for `LLMMatcher` created using `gpt-4o-mini` as default. 

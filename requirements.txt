@@ -7,9 +7,9 @@ openpyxl>=3.1.0  # For Excel file handling
 python-dotenv>=1.0.0  # For environment variables
 pyyaml>=6.0.0  # For configuration files
 
-# AI/ML dependencies (to be used later)
-# openai>=1.0.0
-# scikit-learn>=1.0.0
+# AI/ML dependencies
+openai>=1.0.0 # For OpenAI LLM API calls
+# scikit-learn>=1.0.0 # Keep commented for now
 
 # Testing
 pytest>=7.0.0
