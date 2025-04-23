@@ -21,15 +21,15 @@ This document tracks the development progress and plans for the TXL Accounting D
    - ✅ `output_generator.py`: Generate enriched CSV/Excel output
 
 ### Phase 2: Persistence & Enhancement
-1. Persistence Layer (src/persistence/) ⏳
+1. Persistence Layer (src/persistence/) 🔄
    - ⏳ `mapping_store.py`: Store successful matches
-   - ⏳ `rule_store.py`: Store matching rules
+   - ✅ `rule_store.py`: Store matching rules (JSON implementation complete)
 
 2. Enhanced Rule Matching ⏳
    - This will build upon the basic rule matching in Phase 1
 
-3. Initial Confidence Scoring ⏳
-   - ⏳ `confidence.py`: Calculate match confidence (file exists but empty)
+3. Initial Confidence Scoring ✅
+   - ✅ `confidence.py`: Calculate match confidence (basic implementation complete)
 
 ### Phase 3: AI Integration
 1. AI/LLM Integration (src/matching/) ⏳
@@ -53,15 +53,13 @@ This document tracks the development progress and plans for the TXL Accounting D
   - Basic utilities implemented, more to be added as needed
 
 ## Current Status
-- ✅ Completed: 6 components
+- ✅ Completed: 8 components
 - 🔄 In Progress: 2 components
-- ⏳ Pending: 7 components
+- ⏳ Pending: 5 components
 
 ## Next Steps
-1. Implement confidence scoring
-2. Begin Phase 2: Implement persistence layer
-   - Create `mapping_store.py` for storing successful matches
-   - Create `rule_store.py` for storing matching rules
+1. Implement `mapping_store.py` to complete the persistence layer
+2. Enhance confidence scoring logic (e.g., consider amount, type)
 
 ## Legend
 - ✅ Completed
@@ -73,4 +71,6 @@ This document tracks the development progress and plans for the TXL Accounting D
 - Each component's status will be updated when changes are made
 - Additional notes or requirements will be added as needed
 - Phase 1 is now complete! 🎉
-- Testing coverage has been improved across all Phase 1 components 
+- Testing coverage has been improved across all Phase 1 components
+- Basic confidence scoring implemented and integrated into RuleMatcher.
+- Rule persistence implemented using `RuleStore` (JSON). 

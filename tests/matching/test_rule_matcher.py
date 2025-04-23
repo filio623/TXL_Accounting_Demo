@@ -145,4 +145,45 @@ def test_invalid_rule(chart_of_accounts):
     matcher.add_rule(account, "[invalid", 0.9)
     
     # The invalid rule should not be added
-    assert len(matcher.rules[account.number]) == 2  # Should still only have default rules 
+    assert len(matcher.rules[account.number]) == 2  # Should still only have default rules
+
+
+def test_rule_save_load(chart_of_accounts, tmp_path):
+    """Test saving and loading rules using RuleStore."""
+    # Use a temporary file path for the rule store
+    rule_file = tmp_path / "test_rules.json"
+    
+    # Create first matcher instance
+    matcher1 = RuleMatcher(chart_of_accounts, rule_store_path=rule_file)
+    
+    # Add a custom rule
+    account_to_modify = chart_of_accounts.find_account("1100") # Child 1
+    custom_pattern = "CUSTOM_RULE_XYZ"
+    custom_confidence = 0.95
+    
+    # Verify the rule doesn't exist initially in the default rules
+    assert not any(rule[0] == custom_pattern for rule in matcher1.rules[account_to_modify.number])
+    
+    matcher1.add_rule(account_to_modify, custom_pattern, custom_confidence)
+    
+    # Verify the rule was added to the current matcher
+    assert any(rule[0] == custom_pattern and rule[1] == custom_confidence for rule in matcher1.rules[account_to_modify.number])
+
+    # Save the rules
+    matcher1.save_rules()
+    
+    # Ensure the file was created
+    assert rule_file.exists()
+    
+    # Create a second matcher instance, loading from the same file
+    matcher2 = RuleMatcher(chart_of_accounts, rule_store_path=rule_file)
+    
+    # Verify the custom rule was loaded correctly
+    assert account_to_modify.number in matcher2.rules
+    assert any(rule[0] == custom_pattern and rule[1] == custom_confidence for rule in matcher2.rules[account_to_modify.number])
+    
+    # Verify default rules are also present (unless overwritten by loaded rules)
+    # In this case, default rules should still be there as we only added one.
+    assert len(matcher2.rules[account_to_modify.number]) > 1
+    # Check for one of the default rules specifically
+    assert any(rule[0] == account_to_modify.name for rule in matcher2.rules[account_to_modify.number]) 
