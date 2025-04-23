@@ -21,8 +21,8 @@ This document tracks the development progress and plans for the TXL Accounting D
    - ✅ `output_generator.py`: Generate enriched CSV/Excel output
 
 ### Phase 2: Persistence & Enhancement
-1. Persistence Layer (src/persistence/) 🔄
-   - ⏳ `mapping_store.py`: Store successful matches
+1. Persistence Layer (src/persistence/) ✅
+   - ✅ `mapping_store.py`: Store successful matches (JSON implementation complete)
    - ✅ `rule_store.py`: Store matching rules (JSON implementation complete)
 
 2. Enhanced Rule Matching ⏳
@@ -53,12 +53,12 @@ This document tracks the development progress and plans for the TXL Accounting D
   - Basic utilities implemented, more to be added as needed
 
 ## Current Status
-- ✅ Completed: 8 components
+- ✅ Completed: 9 components
 - 🔄 In Progress: 2 components
-- ⏳ Pending: 5 components
+- ⏳ Pending: 4 components
 
 ## Next Steps
-1. Implement `mapping_store.py` to complete the persistence layer
+1. Implement Enhanced Rule Matching logic
 2. Enhance confidence scoring logic (e.g., consider amount, type)
 
 ## Legend
@@ -73,4 +73,5 @@ This document tracks the development progress and plans for the TXL Accounting D
 - Phase 1 is now complete! 🎉
 - Testing coverage has been improved across all Phase 1 components
 - Basic confidence scoring implemented and integrated into RuleMatcher.
-- Rule persistence implemented using `RuleStore` (JSON). 
+- Rule persistence implemented using `RuleStore` (JSON).
+- Mapping persistence implemented using `MappingStore` (JSON). 
