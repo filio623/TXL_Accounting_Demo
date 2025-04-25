@@ -64,22 +64,15 @@ class LLMMatcher(Matcher):
         logger.info(f"LLMMatcher configured for model: {self.model_name}")
     
     def _create_prompt(self, transaction: Transaction) -> str:
-        """(Placeholder) Create the prompt for the LLM."""
-        # TODO: Implement prompt engineering. Include:
-        # - Clear instructions for the task (match to ONE account number)
-        # - Transaction details (description, amount, type, maybe date)
-        # - Relevant parts of the chart of accounts (maybe just leaf nodes or relevant branches?)
-        # - Desired output format (e.g., JSON with account number and confidence)
-        # - Need to be mindful of token limits.
-        
+        """Create the prompt for the LLM, emphasizing single account number output."""
+        # Simplified prompt focusing on just the account number output
         prompt = f"""
-        You are an expert accounting assistant. Your task is to match the following 
-        bank transaction to the most appropriate account from the provided chart of accounts.
-        Only respond with the single, most likely account number.
+        Analyze the following bank transaction and the provided chart of accounts (leaf nodes only).
+        Respond with ONLY the 4-digit account number from the chart that is the single best match.
+        Do not include any other text, explanation, or formatting.
         
         Chart of Accounts (Leaf Nodes):
         """
-        # Simplistic approach: list all leaf accounts. Might exceed token limits for large charts.
         leaf_accounts_str = "\n".join([f"- {acc.number}: {acc.full_name}" for acc in self.chart_of_accounts.get_leaf_accounts()])
         prompt += leaf_accounts_str
         
@@ -91,15 +84,9 @@ class LLMMatcher(Matcher):
         - Type: {transaction.type}
         - Category: {transaction.category}
         
-        Respond ONLY with the most likely account number (e.g., 6010).
-        Account Number: """
+        Account Number:""" # End prompt clearly asking for the number
         
-        # TODO: Add token counting and truncation logic if necessary
-        # estimated_tokens = len(prompt) / 4 # Very rough estimate
-        # if estimated_tokens > self.max_prompt_tokens:
-        #     logger.warning("Estimated prompt tokens exceed limit. Consider truncating chart of accounts.")
-            # Implement truncation logic
-        
+        # TODO: Token counting/truncation is still important for production
         return prompt
         
     def _call_llm_api(self, prompt: str) -> Optional[str]:
@@ -113,10 +100,10 @@ class LLMMatcher(Matcher):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=20, # Increased slightly for robustness
-                temperature=0.1, # Low temperature for deterministic account number
-                n=1, # Request only one completion
-                stop=None # Let model decide when to stop (or set specific stop sequences)
+                max_tokens=10, # Should be enough for just an account number
+                temperature=0.1, 
+                n=1, 
+                stop=None 
             )
             llm_output = response.choices[0].message.content.strip()
             logger.debug(f"LLM Raw Output: {llm_output}")
@@ -129,16 +116,23 @@ class LLMMatcher(Matcher):
             return None
 
     def _parse_llm_response(self, llm_output: str) -> Optional[str]:
-        """Parse the LLM response to extract the account number."""
-        # Attempt to extract a sequence of digits (account number)
-        match = re.search(r'\b(\d{4,})\b', llm_output) # Look for 4+ digits as a word
-        if match:
-            account_number = match.group(1)
-            logger.debug(f"Parsed account number '{account_number}' from LLM output.")
-            return account_number
+        """Parse the LLM response, expecting just an account number."""
+        # Trim potential whitespace/newlines
+        parsed_number = llm_output.strip()
         
-        logger.warning(f"Could not parse account number (\d{{4,}}) from LLM output: {llm_output}")
-        return None
+        # Basic validation: check if it looks like a number and exists in CoA
+        if re.fullmatch(r"\d+", parsed_number): # Check if it contains only digits
+            # Check if this number actually exists in our chart of accounts
+            # Note: This requires access to chart_of_accounts, which the base Matcher has
+            if self.chart_of_accounts.find_account(parsed_number):
+                 logger.debug(f"Parsed account number '{parsed_number}' and verified it exists.")
+                 return parsed_number
+            else:
+                 logger.warning(f"LLM output '{parsed_number}' looks like an account number but doesn't exist in Chart of Accounts.")
+                 return None
+        else:
+            logger.warning(f"LLM output '{parsed_number}' is not a valid account number format.")
+            return None
 
     def match_transaction(self, transaction: Transaction) -> None:
         """
@@ -179,9 +173,10 @@ class LLMMatcher(Matcher):
             elif matched_account:
                  logger.warning(f"LLM returned account {account_number} for '{transaction.description}', but it's not a leaf account.")
             else:
+                # This case should be caught by the new _parse_llm_response logic, but kept as safety
                 logger.warning(f"LLM returned account number {account_number} for '{transaction.description}', but it does not exist in the chart of accounts.")
         else:
-            logger.warning(f"Failed to parse account number from LLM response for: {transaction.description}")
+            logger.warning(f"Failed to parse valid account number from LLM response for: {transaction.description}")
         
     def get_match_confidence(self, transaction: Transaction, account: Account) -> float:
         """

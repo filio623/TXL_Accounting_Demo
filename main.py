@@ -12,7 +12,8 @@ from typing import Optional
 
 from src.models.account import ChartOfAccounts
 from src.data.input_processor import TransactionProcessor
-from src.matching.matcher import MatchingEngine
+# Import MatchingEngine from its new location
+from src.matching.engine import MatchingEngine 
 from src.matching.rule_matcher import RuleMatcher
 # Import LLMMatcher
 from src.matching.llm_matcher import LLMMatcher 

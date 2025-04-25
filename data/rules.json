@@ -1,0 +1,30 @@
+[
+  {
+    "_comment_": "Rule structure: Define conditions to match a transaction to an account.",
+    "condition_type": "description_equals", 
+    "condition_value": "The Home Depot",
+    "account_number": "7010", 
+    "priority": 10 
+  },
+  {
+    "_comment_": "Example 2: Using 'description_contains' for broader matching.",
+    "condition_type": "description_contains",
+    "condition_value": "Chevron",
+    "account_number": "6910", 
+    "priority": 10 
+  },
+  {
+    "_comment_": "Example 3: Another rule.",
+    "condition_type": "description_equals",
+    "condition_value": "OpenAI",
+    "account_number": "6010", 
+    "priority": 15 
+  },
+  {
+    "_instruction_": "Add your real rules below, removing examples and comments (keys starting with _)",
+    "condition_type": "description_equals", 
+    "condition_value": "Replace With Canonical Name or Pattern",
+    "account_number": "Replace With Account Number", 
+    "priority": 10 
+  }
+] 

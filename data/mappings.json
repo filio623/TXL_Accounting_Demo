@@ -1,0 +1,18 @@
+{
+  "_comment_": "Format: \"Raw Description from Bank Statement\": \"Canonical Name\"",
+  
+  "_example_1a_": "Map different variations to the same canonical name",
+  "THE HOME DEPOT #6357": "The Home Depot",
+  "THE HOME DEPOT 6357": "The Home Depot",
+
+  "_example_2_": "Another vendor",
+  "CHEVRON 0379997": "Chevron",
+
+  "_example_3_": "Online service",
+  "OPENAI": "OpenAI",
+
+  "_instruction_": "Add your real mappings below, removing the examples and comments (keys starting with _)",
+  "REPLACE_WITH_RAW_DESCRIPTION_1": "Replace With Canonical Name 1",
+  "REPLACE_WITH_RAW_DESCRIPTION_2": "Replace With Canonical Name 2"
+  
+} 
