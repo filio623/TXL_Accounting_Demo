@@ -71,7 +71,76 @@ TXL_Accounting_Demo/
    - Output includes transaction details and match information (Account Number, Name, Path, Confidence, Source).
    - Alternative matches (from `Transaction.add_match` logic) may also be included.
 
-### Sequence Diagram (with LLM enabled)
+### Flowchart
+
+This diagram shows the overall process flow.
+
+```mermaid
+graph TD
+    Start([Start]) --> LoadConfig{Load Config/Data};
+    LoadConfig -- Chart of Accounts --> InitMatchers[Initialize Matchers];
+    LoadConfig -- Rules/Mappings --> InitMatchers;
+    InitMatchers --> ReadInput[Read Input CSV];
+    ReadInput -- Transactions List --> RunEngine[Run Matching Engine];
+
+    subgraph Matching Engine
+        RunEngine --> Pass1{Pass 1: RuleMatcher};
+        Pass1 -- Updated Transactions --> CheckThreshold{Check Confidence < Threshold?};
+        CheckThreshold -- Yes --> Pass2{Pass 2: LLMMatcher};
+        CheckThreshold -- No --> CombineResults[Combine Results];
+        Pass2 -- Updated Transactions --> CombineResults;
+    end
+
+    CombineResults -- Final Transactions --> GenerateOutput[Generate Output CSV];
+    GenerateOutput --> End([End]);
+
+    style Start fill:#ddd,stroke:#333,stroke-width:2px
+    style End fill:#ddd,stroke:#333,stroke-width:2px
+    style LoadConfig fill:#f9f,stroke:#333,stroke-width:2px
+    style ReadInput fill:#f9f,stroke:#333,stroke-width:2px
+    style GenerateOutput fill:#f9f,stroke:#333,stroke-width:2px
+    style CheckThreshold fill:#ccf,stroke:#333,stroke-width:2px
+```
+
+### High-Level Sequence Diagram
+
+This diagram shows the main interaction between components.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant main.py
+    participant DataLoaders
+    participant MatchingEngine
+    participant RuleMatcher
+    participant LLMMatcher
+    participant OutputGenerator
+
+    User->>main.py: Run Script (CSV, flags)
+    main.py->>DataLoaders: Load CoA, Rules, Mappings
+    DataLoaders-->>main.py: Config / Data
+    main.py->>MatchingEngine: Initialize & Add Matchers
+    main.py->>DataLoaders: Read Transactions (CSV)
+    DataLoaders-->>main.py: Transaction List
+    main.py->>MatchingEngine: process_transactions(List[Tx])
+
+    MatchingEngine->>RuleMatcher: Pass 1: Process All Tx
+    RuleMatcher-->>MatchingEngine: Tx Updated (Rule Matches)
+
+    opt LLM Enabled
+        MatchingEngine->>LLMMatcher: Pass 2: Process Filtered Tx
+        LLMMatcher-->>MatchingEngine: Tx Updated (LLM Matches)
+    end
+
+    MatchingEngine-->>main.py: Final Processed Tx List
+    main.py->>OutputGenerator: Generate Output File
+    OutputGenerator-->>main.py: (File Written)
+    main.py-->>User: Log Completion
+```
+
+### Detailed Sequence Diagram (with LLM enabled)
+
+This diagram provides more detail on the internal calls.
 
 ```mermaid
 sequenceDiagram
