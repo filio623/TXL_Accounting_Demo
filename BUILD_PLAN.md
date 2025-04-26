@@ -36,7 +36,7 @@ This document tracks the development progress and plans for the TXL Accounting D
 ### Phase 3: AI Integration
 1. AI/LLM Integration (src/matching/) 🔄
    - 🔄 `llm_matcher.py`: LLM-based matching logic (Basic structure created, model set to gpt-4o-mini)
-   - ⏳ Implement actual LLM API calls and parsing
+   - ✅ Implement actual LLM API calls and parsing (Basic calls & parsing for account/confidence implemented)
    - ⏳ Refine LLM prompt engineering
 
 2. Advanced Confidence Scoring ⏳
@@ -81,4 +81,8 @@ This document tracks the development progress and plans for the TXL Accounting D
 - Rule persistence implemented using `RuleStore` (JSON).
 - Mapping persistence implemented using `MappingStore` (JSON).
 - Current enhancement: Adding mapping-first check to `RuleMatcher`. Known limitation: simple mapping cannot handle same description mapping to multiple accounts; solution deferred.
-- Basic structure for `LLMMatcher` created using `gpt-4o-mini` as default. 
+- Basic structure for `LLMMatcher` created using `gpt-4o-mini` as default.
+
+## Future Enhancements
+
+- **Rule/Mapping Management UI:** ⏳ Develop a user interface (web-based or desktop) to allow users to easily add, edit, and delete entries in `data/mappings.json` and `data/rules.json` without manually editing the files. This is a lower-priority, long-term goal. 

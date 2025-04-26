@@ -52,22 +52,93 @@ TXL_Accounting_Demo/
    - Each account has a number, name, and optional parent account
 
 3. **Transaction Matching**
-   - For each transaction, the system:
-     - Applies matching rules to find potential matches
-     - Calculates confidence scores for each match
-     - Selects the best match based on confidence
-     - Stores alternative matches for review
+   - For each transaction, the `MatchingEngine` orchestrates the process:
+     - **Pass 1 (Primary Matcher - typically `RuleMatcher`):**
+       - Applies description mappings (e.g., `"Vendor LLC" -> "Vendor"`).
+       - Evaluates predefined rules against the mapped description.
+       - Selects the best rule match based on priority and confidence.
+       - Updates the `Transaction` with the match (account, confidence, source=RULE).
+     - **Pass 2 (Secondary Matcher - typically `LLMMatcher`, if enabled):**
+       - Filters transactions that were not matched in Pass 1 or had confidence below a threshold.
+       - For each filtered transaction:
+         - Creates a prompt including transaction details and Chart of Accounts context.
+         - Calls the LLM API.
+         - Parses the response (account number and confidence score).
+         - If the LLM match is valid and has confidence >= any existing match, updates the `Transaction` (account, confidence, source=LLM).
 
-4. **Rule Application**
-   - Rules are applied in order of priority
-   - Each rule has a pattern and confidence score
-   - Rules can match on account name, number, or custom patterns
-   - Invalid rules are skipped without error
+4. **Output Generation**
+   - Matched transactions are exported to CSV or Excel using `OutputGenerator`.
+   - Output includes transaction details and match information (Account Number, Name, Path, Confidence, Source).
+   - Alternative matches (from `Transaction.add_match` logic) may also be included.
 
-5. **Output Generation**
-   - Matched transactions are exported to CSV or Excel
-   - Output includes transaction details and match information
-   - Confidence scores and alternative matches are included
+### Sequence Diagram (with LLM enabled)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant main.py
+    participant TransactionProcessor
+    participant ChartOfAccounts
+    participant RuleStore
+    participant MappingStore
+    participant MatchingEngine
+    participant RuleMatcher
+    participant LLMMatcher
+    participant OutputGenerator
+
+    User->>main.py: Run script (input_file.csv, --use-llm)
+    main.py->>ChartOfAccounts: Load from config/chart_of_accounts.json
+    ChartOfAccounts-->>main.py: Chart instance
+    main.py->>RuleMatcher: Initialize (passing Chart, store paths)
+    RuleMatcher->>MappingStore: load()
+    MappingStore-->>RuleMatcher: Mappings dict
+    RuleMatcher->>RuleStore: load()
+    RuleStore-->>RuleMatcher: Rules list
+    RuleMatcher-->>main.py: RuleMatcher instance
+    main.py->>LLMMatcher: Initialize (passing Chart)
+    LLMMatcher-->>main.py: LLMMatcher instance
+    main.py->>MatchingEngine: Initialize (passing Chart)
+    MatchingEngine-->>main.py: Engine instance
+    main.py->>MatchingEngine: add_matcher(RuleMatcher)
+    main.py->>MatchingEngine: add_matcher(LLMMatcher)
+
+    main.py->>TransactionProcessor: read_file(input_file.csv)
+    TransactionProcessor-->>main.py: List[Transaction]
+    main.py->>MatchingEngine: process_transactions(transactions, threshold)
+
+    MatchingEngine->>RuleMatcher: process_transactions(transactions)
+    loop For each Transaction
+        RuleMatcher->>RuleMatcher: _apply_mapping(desc)
+        RuleMatcher->>RuleMatcher: Evaluate rules against mapped_desc
+        alt Rule Match Found (Priority/Confidence Check)
+            RuleMatcher->>ChartOfAccounts: find_account(rule_acc_num)
+            ChartOfAccounts-->>RuleMatcher: Account object
+            RuleMatcher->>Transaction: add_match(account, confidence, MatchSource.RULE)
+        end
+    end
+    RuleMatcher-->>MatchingEngine: (Transactions updated)
+
+    MatchingEngine->>MatchingEngine: Filter transactions below threshold
+    MatchingEngine->>LLMMatcher: process_transactions(filtered_transactions)
+    loop For each Filtered Transaction
+        LLMMatcher->>LLMMatcher: _create_prompt(transaction, chart)
+        LLMMatcher->>LLMMatcher: _call_llm_api(prompt)
+        LLMMatcher->>LLMMatcher: _parse_llm_response(api_output)
+        opt Valid Account & Confidence Parsed
+            LLMMatcher->>ChartOfAccounts: find_account(parsed_acc_num)
+            ChartOfAccounts-->>LLMMatcher: Account object
+            alt LLM Confidence >= Existing Confidence
+                 LLMMatcher->>Transaction: add_match(account, confidence, MatchSource.LLM)
+            end
+        end
+    end
+    LLMMatcher-->>MatchingEngine: (Filtered transactions updated)
+
+    MatchingEngine-->>main.py: List[Transaction] (updated)
+    main.py->>OutputGenerator: generate_file(transactions, output_path)
+    OutputGenerator-->>main.py: (File written)
+    main.py-->>User: Log "Processing complete!"
+```
 
 ## Getting Started
 

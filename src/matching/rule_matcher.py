@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .matcher import Matcher
 from .confidence import calculate_rule_based_confidence
-from ..models.transaction import Transaction
+from ..models.transaction import Transaction, MatchSource
 from ..models.account import Account, ChartOfAccounts
 from ..persistence.rule_store import RuleStore
 from ..persistence.mapping_store import MappingStore, MappingData
@@ -18,6 +18,11 @@ class RuleMatcher(Matcher):
     Enhanced rule-based matcher that checks mappings first, then applies rules.
     Uses RuleStore for rules and MappingStore for direct mappings.
     """
+    
+    # Define constants for default confidence scores based on rule type
+    CONFIDENCE_EQUALS = 0.95
+    CONFIDENCE_CONTAINS = 0.85
+    # Add CONFIDENCE_REGEX if implementing regex rules
     
     def __init__(self,
                  chart_of_accounts: ChartOfAccounts,
@@ -36,11 +41,15 @@ class RuleMatcher(Matcher):
         super().__init__(chart_of_accounts)
         self.rule_store = RuleStore(rule_store_path)
         self.mapping_store = MappingStore(mapping_store_path)
-        self.rules: Dict[str, List[Tuple[str, float]]] = self._load_or_initialize_rules()
-        self.mappings: MappingData = self._load_mappings()
-        self.mapping_confidence_threshold = max(0.0, min(1.0, mapping_confidence_threshold))
-        
-    def _load_mappings(self) -> MappingData:
+        # Load mappings first
+        self.description_mappings = self._load_mappings()
+        # Load rules after mappings
+        self.rules: List[Dict] = self._load_or_initialize_rules() # Store rules as list of dicts
+        # Note: We might process this list into a dict later for faster lookups if needed
+
+        logger.info(f"RuleMatcher initialized. {len(self.rules)} rules loaded. {len(self.description_mappings)} mappings loaded.")
+
+    def _load_mappings(self) -> Dict[str, str]:
         """Load mappings from the store."""
         loaded_mappings = self.mapping_store.load()
         if loaded_mappings is None: # Loading failed
@@ -49,144 +58,138 @@ class RuleMatcher(Matcher):
         logger.info(f"Successfully loaded {len(loaded_mappings)} description mappings.")
         return loaded_mappings
 
-    def _load_or_initialize_rules(self) -> Dict[str, List[Tuple[str, float]]]:
-        """Load rules from the store or initialize defaults if loading fails or file is empty."""
+    def _load_or_initialize_rules(self) -> List[Dict]: # Return type is List[Dict]
+        """Load rules from RuleStore or initialize default structure."""
         loaded_rules = self.rule_store.load()
         
-        if loaded_rules is not None and loaded_rules: # Check if loaded successfully and is not empty
-            logger.info(f"Successfully loaded {len(loaded_rules)} accounts' rules from {self.rule_store.file_path}")
-            # Ensure all leaf accounts have at least an empty list in rules
-            all_rules = loaded_rules
-            for account in self.chart_of_accounts.get_leaf_accounts():
-                if account.number not in all_rules:
-                    all_rules[account.number] = []
-            return all_rules
-        elif loaded_rules == {}: # File didn't exist or was empty
-             logger.info("No existing rules file found or file empty. Initializing default rules.")
-             return self._initialize_default_rules()
-        else: # Loading failed due to an error
-            logger.error("Failed to load rules from store. Initializing default rules as fallback.")
-            return self._initialize_default_rules()
+        if loaded_rules is None: # Error during loading
+            logger.error("Failed to load rules from store due to errors. Initializing empty rules.")
+            return [] # Return empty list
+        elif isinstance(loaded_rules, list): # Successfully loaded a list
+            logger.info(f"Successfully loaded {len(loaded_rules)} rules from {self.rule_store.file_path}")
+            # Perform validation on each rule dict here if necessary
+            # e.g., check for required keys
+            valid_rules = []
+            for rule in loaded_rules:
+                if isinstance(rule, dict) and all(k in rule for k in ['condition_type', 'condition_value', 'account_number', 'priority']):
+                    valid_rules.append(rule)
+                else:
+                    logger.warning(f"Skipping invalid rule format: {rule}")
+            return valid_rules
+        else:
+            # This case should ideally not happen if RuleStore.load works correctly
+            logger.warning(f"Loaded rules are not in the expected list format (got {type(loaded_rules).__name__}). Initializing empty rules.")
+            return [] 
 
-    def _initialize_default_rules(self) -> Dict[str, List[Tuple[str, float]]]:
-        """Initialize default matching rules for each account."""
-        default_rules = {}
-        for account in self.chart_of_accounts.get_leaf_accounts():
-            rules_list = []
-            # Add default rules based on account name and number
-            rules_list.append((account.name, 0.8))
-            rules_list.append((account.number, 0.9))
-            default_rules[account.number] = rules_list
-        return default_rules
-    
-    def save_rules(self) -> None:
-        """Save the current state of the rules to the persistence store."""
-        logger.info(f"Attempting to save rules to {self.rule_store.file_path}")
-        self.rule_store.save(self.rules)
+    def _apply_mapping(self, description: str) -> str:
+        """Apply description mapping if available."""
+        return self.description_mappings.get(description, description)
 
     def match_transaction(self, transaction: Transaction) -> None:
-        """
-        Match a transaction: check mappings, then apply rules, allowing rules to override mappings.
-        Updates the transaction with the best match found.
+        """Match a transaction using mappings and rules."""
         
-        Args:
-            transaction: The transaction to match
-        """
-        best_match: Optional[Account] = None
-        best_confidence: float = 0.0
-        alternative_matches: List[Tuple[Account, float]] = []
+        mapped_description = self._apply_mapping(transaction.description)
+        best_match_account: Optional[Account] = None
+        highest_confidence: float = -1.0 # Use -1 to ensure first valid match is chosen
+        highest_priority: int = -1
 
-        # 1. Check Direct Mappings (Treat as initial best guess)
-        mapped_account_number = self.mappings.get(transaction.description)
-        if mapped_account_number:
-            mapped_account = self.chart_of_accounts.find_account(mapped_account_number)
-            if mapped_account and mapped_account.is_leaf:
-                logger.debug(f"Mapping found for '{transaction.description}' -> {mapped_account.number}. Treating as initial match with confidence {self.mapping_confidence_threshold:.2f}")
-                best_match = mapped_account
-                best_confidence = self.mapping_confidence_threshold
-                # Don't return yet, let rules potentially override
-            elif mapped_account:
-                 logger.warning(f"Mapping found for '{transaction.description}' to {mapped_account_number}, but it's not a leaf account. Ignoring mapping.")
-            else:
-                logger.warning(f"Mapping found for '{transaction.description}' to non-existent account {mapped_account_number}. Ignoring mapping.")
+        # Iterate through the list of rules
+        for rule in self.rules:
+            match = False
+            confidence = 0.0 # Default confidence for rules?
+            priority = rule.get('priority', 0) # Default priority if missing
+            condition_type = rule.get('condition_type')
+            condition_value = rule.get('condition_value')
+            account_number = rule.get('account_number')
 
-        # 2. Apply rules and compare with mapping confidence (if any)
-        for account in self.chart_of_accounts.get_leaf_accounts():
-            confidence = self.get_match_confidence(transaction, account)
-            
-            if confidence > best_confidence:
-                # New best match found (either better than mapping or better than previous rule)
-                if best_match: # Move the previous best (mapping or rule) to alternatives
-                     alternative_matches.append((best_match, best_confidence))
-                best_match = account
-                best_confidence = confidence
-                logger.debug(f"New best match found via rule for '{transaction.description}': {account.number} (Confidence: {confidence:.2f})")
-            elif confidence > 0.3: # Consider as alternative if confidence is decent
-                 # Avoid adding the initial mapped account as an alternative to itself if it wasn't overridden
-                 if best_match != account:
-                    alternative_matches.append((account, confidence))
-        
-        # Update the transaction with the final best match
-        if best_match:
-            transaction.add_match(best_match, best_confidence)
-            # Sort alternatives and add to transaction
-            alternative_matches.sort(key=lambda x: x[1], reverse=True)
-            # Ensure we don't add the final best match as an alternative
-            transaction.alternative_matches = [alt for alt in alternative_matches[:3] if alt[0] != best_match]
-
-    def get_match_confidence(self, transaction: Transaction, account: Account) -> float:
-        """
-        Calculate the highest confidence score for a match using rules.
-        Uses the centralized calculate_rule_based_confidence function.
-        
-        Args:
-            transaction: The transaction to match
-            account: The account to match against
-            
-        Returns:
-            float: Highest confidence score found (0.0 to 1.0)
-        """
-        if not self._validate_match(transaction, account):
-            return 0.0
-
-        max_confidence = 0.0
-        best_matching_rule = None
-
-        # Find the rule with the highest base confidence that matches
-        for rule in self.rules.get(account.number, []):
-            pattern, base_confidence = rule
-            try:
-                if re.search(pattern, transaction.description, re.IGNORECASE):
-                    # We found a match, calculate its specific confidence
-                    current_confidence = calculate_rule_based_confidence(transaction, account, rule)
-                    if current_confidence > max_confidence:
-                        max_confidence = current_confidence
-                        # We might want to store the *rule* that gave the best confidence later
-                        # best_matching_rule = rule 
-            except re.error as e:
-                logger.warning(f"Skipping invalid regex pattern '{pattern}' for account {account.number}: {e}")
+            if not all([condition_type, condition_value, account_number]):
+                logger.warning(f"Skipping rule due to missing fields: {rule}")
                 continue
 
-        return max_confidence
-    
+            # --- Rule Condition Matching Logic ---
+            try:
+                if condition_type == 'description_equals':
+                    if mapped_description == condition_value:
+                        match = True
+                        confidence = self.CONFIDENCE_EQUALS
+                elif condition_type == 'description_contains':
+                    # Ensure condition_value is treated as string
+                    if isinstance(condition_value, str) and condition_value in mapped_description:
+                        match = True
+                        confidence = self.CONFIDENCE_CONTAINS
+                # Add elif for 'description_matches_regex' here if needed
+                else:
+                    logger.warning(f"Unsupported condition_type '{condition_type}' in rule: {rule}")
+                    continue
+            except Exception as e:
+                logger.error(f"Error evaluating rule condition for rule {rule}: {e}", exc_info=True)
+                continue
+            # --- End Rule Condition Matching ---
+
+            if match:
+                # Find the account object using the correct method name
+                potential_account = self.chart_of_accounts.find_account(str(account_number))
+                if potential_account and self._validate_match(transaction, potential_account):
+                    # Check priority and confidence
+                    if priority > highest_priority:
+                        highest_priority = priority
+                        highest_confidence = confidence 
+                        best_match_account = potential_account
+                    elif priority == highest_priority and confidence > highest_confidence:
+                        # If same priority, higher confidence wins
+                        highest_confidence = confidence
+                        best_match_account = potential_account
+                        
+        # Apply the best match found
+        if best_match_account:
+            transaction.add_match(best_match_account, highest_confidence, source=MatchSource.RULE) 
+            # Note: add_match handles logic for primary vs alternative matches
+            #       and MatchSource isn't part of its signature currently.
+            # We might need to adjust Transaction.add_match or how we record source later.
+            # logger.debug(f"Rule matched {transaction.description} to {best_match_account.number} (Conf: {highest_confidence:.2f}, Prio: {highest_priority})")
+        # else: No rule match found
+            # logger.debug(f"No rule match found for {transaction.description}")
+
+    def get_match_confidence(self, transaction: Transaction, account: Account) -> float:
+        """ 
+        DEPRECATED/NEEDS REVIEW:
+        Calculates confidence for a transaction against a *specific* account.
+        The primary rule matching & confidence logic is now in `match_transaction`.
+        This method needs review if account-specific confidence probing is needed.
+        Returns 0.0 for now.
+        """
+        # TODO: Review if this method is needed. If so, rewrite to work with 
+        # the self.rules list and define its specific purpose vs match_transaction.
+        logger.debug(f"get_match_confidence called for Tx: {transaction.id} / Acc: {account.number} - Returning 0.0 (Method needs review)")
+        return 0.0
+
     def add_rule(self, account: Account, pattern: str, confidence: float) -> None:
         """
-        Add a custom matching rule for an account.
+        NEEDS IMPLEMENTATION:
+        Adds a rule dynamically. Currently disabled as it needs updating for the 
+        list-based rule structure (`self.rules`). Manual editing of rules.json is used.
+        """
+        # TODO: Implement this method to correctly append a rule dictionary 
+        # to self.rules if dynamic rule addition is required.
+        logger.warning(f"add_rule called for Acc: {account.number} - Method is currently disabled.")
+        pass
+
+    def _validate_match(self, transaction: Transaction, account: Account) -> bool:
+        """
+        Validate if a match is potentially valid based on basic rules.
+        Checks if the account is a leaf node.
         
         Args:
-            account: The account to add the rule for
-            pattern: The regex pattern to match against
-            confidence: Base confidence score for this rule (default: 0.8)
+            transaction: The transaction to validate.
+            account: The account to validate against.
+            
+        Returns:
+            bool: True if the match is potentially valid.
         """
+        if account is None:
+            logger.warning("_validate_match called with None account for Tx: {transaction.id}")
+            return False
         if not account.is_leaf:
-            logger.warning(f"Cannot add rule to non-leaf account: {account.number} - {account.name}")
-            return
-
-        try:
-            # Validate the regex pattern
-            re.compile(pattern)
-            # Use setdefault to ensure the list exists before appending
-            self.rules.setdefault(account.number, []).append((pattern, confidence))
-            logger.info(f"Added rule for account {account.number}: pattern='{pattern}', confidence={confidence}")
-        except re.error as e:
-            logger.error(f"Invalid regex pattern '{pattern}' for account {account.number}: {e}")
+            # logger.debug(f"Validation failed for Tx: {transaction.id}: Account {account.number} is not a leaf account.")
+            return False
+        return True

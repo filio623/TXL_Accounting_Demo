@@ -3,9 +3,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 from decimal import Decimal
+from enum import Enum, auto
 
 from .account import Account
 
+# Define Enum for match source
+class MatchSource(Enum):
+    MANUAL = auto()
+    RULE = auto()
+    MAPPING = auto() # If we distinguish mapping-only matches
+    LLM = auto()
+    UNKNOWN = auto()
 
 @dataclass
 class Transaction:
@@ -24,6 +32,7 @@ class Transaction:
     # Matched account information
     matched_account: Optional[Account] = None
     match_confidence: float = 0.0
+    match_source: MatchSource = MatchSource.UNKNOWN
     alternative_matches: list[tuple[Account, float]] = field(default_factory=list)
     
     @classmethod
@@ -48,7 +57,8 @@ class Transaction:
             'Category': self.category or '',
             'Type': self.type,
             'Amount': str(self.amount),
-            'Memo': self.memo or ''
+            'Memo': self.memo or '',
+            'Match Source': self.match_source.name
         }
         
         # Add matched account information if available
@@ -98,26 +108,46 @@ class Transaction:
                 
         return False
     
-    def add_match(self, account: Account, confidence: float) -> None:
+    def add_match(self, account: Account, confidence: float, source: MatchSource = MatchSource.UNKNOWN) -> None:
         """
-        Add or update the matched account with a confidence score.
+        Add or update the matched account, confidence score, and source.
+
         If the new match has higher confidence, it becomes the primary match
-        and the old one moves to alternatives.
+        and the old primary match (if any) moves to alternatives.
+        Updates the match source regardless of confidence change.
+        
+        Args:
+            account: The matched Account object.
+            confidence: The confidence score (0.0-1.0) of the match.
+            source: The source of the match (e.g., RULE, LLM).
         """
         if not self.matched_account or confidence > self.match_confidence:
             # If there was a previous match, add it to alternatives
             if self.matched_account:
-                self.alternative_matches.append(
-                    (self.matched_account, self.match_confidence)
-                )
-                # Sort alternatives by confidence (highest first)
-                self.alternative_matches.sort(key=lambda x: x[1], reverse=True)
-                # Keep only top 3 alternatives
-                self.alternative_matches = self.alternative_matches[:3]
+                # Store previous match details before overwriting
+                prev_match_details = (self.matched_account, self.match_confidence)
+                # Don't add if it's the same account being re-matched with higher confidence
+                if prev_match_details[0] != account:
+                    self.alternative_matches.append(prev_match_details)
+                    # Sort alternatives by confidence (highest first)
+                    self.alternative_matches.sort(key=lambda x: x[1], reverse=True)
+                    # Keep only top N alternatives (e.g., 3)
+                    self.alternative_matches = self.alternative_matches[:3]
             
+            # Update primary match details
             self.matched_account = account
             self.match_confidence = confidence
-        elif confidence > 0.3:  # Only keep alternatives with >30% confidence
-            self.alternative_matches.append((account, confidence))
-            self.alternative_matches.sort(key=lambda x: x[1], reverse=True)
-            self.alternative_matches = self.alternative_matches[:3]
+            self.match_source = source # Update source
+
+        elif account != self.matched_account and confidence > 0.3:  # Only add different accounts as alternatives
+            # Avoid adding duplicate alternatives
+            is_already_alternative = any(alt[0] == account for alt in self.alternative_matches)
+            if not is_already_alternative:
+                self.alternative_matches.append((account, confidence))
+                self.alternative_matches.sort(key=lambda x: x[1], reverse=True)
+                self.alternative_matches = self.alternative_matches[:3]
+        elif account == self.matched_account:
+             # If the same account is suggested again (e.g., by LLM after a rule) 
+             # but with lower/equal confidence, just update the source if it was UNKNOWN
+             if self.match_source == MatchSource.UNKNOWN:
+                 self.match_source = source

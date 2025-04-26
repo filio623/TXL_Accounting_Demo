@@ -4,8 +4,10 @@ from typing import List, Optional, Type
 # Import base Matcher class
 from .matcher import Matcher
 # Import specific matcher types
-from .rule_matcher import RuleMatcher 
-from .llm_matcher import LLMMatcher
+# These imports are needed for type hinting if used directly,
+# but the engine primarily works with the base Matcher type.
+# from .rule_matcher import RuleMatcher 
+# from .llm_matcher import LLMMatcher
 
 from ..models.transaction import Transaction
 from ..models.account import ChartOfAccounts
@@ -14,75 +16,100 @@ logger = logging.getLogger(__name__)
 
 class MatchingEngine:
     """
-    Main matching engine that coordinates different matchers and manages the matching process.
-    Supports a primary matcher (e.g., rules) and an optional secondary matcher (e.g., LLM).
+    Coordinates the transaction matching process using primary and secondary matchers.
+
+    This engine manages a sequence of matching strategies, typically starting
+    with a high-precision matcher (like rule-based) and optionally falling back
+    to a broader matcher (like an LLM) for transactions that remain unmatched
+    or have low confidence after the primary pass.
     """
     
     def __init__(self, chart_of_accounts: ChartOfAccounts):
         """
-        Initialize the matching engine with a chart of accounts.
+        Initializes the matching engine.
         
         Args:
-            chart_of_accounts: The chart of accounts to match against
+            chart_of_accounts: The chart of accounts instance used by the matchers.
         """
-        self.chart_of_accounts = chart_of_accounts
-        # Separate matchers for clarity in the process method
+        self.chart_of_accounts: ChartOfAccounts = chart_of_accounts
         self.primary_matcher: Optional[Matcher] = None
         self.secondary_matcher: Optional[Matcher] = None 
-        # Store the added matcher types for logging/debugging
-        self._matcher_types: List[str] = []
+        self._matcher_types: List[str] = [] # For logging which matchers are active
 
     def add_matcher(self, matcher: Matcher) -> None:
         """
-        Add a matcher to the engine. Assumes the first added is primary,
-        the second (if any) is secondary.
+        Adds a matcher instance to the engine's processing sequence.
+        
+        The first matcher added becomes the primary matcher.
+        The second matcher added becomes the secondary matcher.
+        Currently, only two matchers are supported.
         
         Args:
-            matcher: The matcher instance to add.
+            matcher: The matcher instance (e.g., RuleMatcher, LLMMatcher) to add.
         """
         matcher_type_name = type(matcher).__name__
         if self.primary_matcher is None:
             self.primary_matcher = matcher
             self._matcher_types.append(f"Primary: {matcher_type_name}")
-            logger.info(f"Added Primary Matcher: {matcher_type_name}")
+            logger.info(f"Registered Primary Matcher: {matcher_type_name}")
         elif self.secondary_matcher is None:
             self.secondary_matcher = matcher
             self._matcher_types.append(f"Secondary: {matcher_type_name}")
-            logger.info(f"Added Secondary Matcher: {matcher_type_name}")
+            logger.info(f"Registered Secondary Matcher: {matcher_type_name}")
         else:
-            logger.warning(f"MatchingEngine currently only supports primary and secondary matchers. Ignoring additional matcher: {matcher_type_name}")
+            logger.warning(f"MatchingEngine currently supports only primary and secondary matchers. "
+                           f"Ignoring additional matcher: {matcher_type_name}")
 
-    def process_transactions(self, 
-                             transactions: List[Transaction], 
-                             secondary_confidence_threshold: float = 0.80
-                            ) -> List[Transaction]:
+    def process_transactions(
+        self,
+        transactions: List[Transaction],
+        secondary_confidence_threshold: float = 0.80
+    ) -> List[Transaction]:
         """
-        Process transactions using a two-pass strategy if a secondary matcher is present.
-        1. Runs the primary matcher on all transactions.
-        2. Runs the secondary matcher on transactions below the confidence threshold.
+        Processes a list of transactions through the configured matching sequence.
+        
+        Pass 1: Runs the primary matcher on all transactions.
+        Pass 2 (Optional): Runs the secondary matcher on transactions where the primary 
+                          match resulted in a confidence score below the specified threshold 
+                          or if the transaction remained unmatched.
         
         Args:
-            transactions: List of transactions to process.
-            secondary_confidence_threshold: Confidence threshold below which the secondary
-                                             matcher is invoked.
+            transactions: The list of Transaction objects to process.
+            secondary_confidence_threshold: The confidence score (0.0-1.0) threshold. 
+                                             Transactions with confidence below this after 
+                                             Pass 1 will be processed by the secondary matcher.
                                              
         Returns:
-            List[Transaction]: The processed transactions with matches.
+            The same list of Transaction objects, updated with match results 
+            (matched_account, match_confidence) where applicable.
+            
+        Raises:
+            RuntimeError: If no primary matcher has been added to the engine.
         """
         if not self.primary_matcher:
+            logger.error("Cannot process transactions: No primary matcher has been registered.")
             raise RuntimeError("No primary matcher registered with the engine")
         
-        logger.info(f"Starting transaction processing using matchers: {', '.join(self._matcher_types)}")
+        active_matchers_str = ", ".join(self._matcher_types)
+        logger.info(f"Starting transaction processing for {len(transactions)} transactions using matchers: {active_matchers_str}")
 
         # --- Pass 1: Primary Matcher --- 
-        logger.info(f"Running Pass 1: Primary Matcher ({type(self.primary_matcher).__name__})...")
-        # Process all transactions with the primary matcher
-        self.primary_matcher.process_transactions(transactions)
-        logger.info("Pass 1 complete.")
+        primary_matcher_name = type(self.primary_matcher).__name__
+        logger.info(f"Running Pass 1: Primary Matcher ({primary_matcher_name})...")
+        try:
+            # Process all transactions with the primary matcher
+            self.primary_matcher.process_transactions(transactions)
+            logger.info("Pass 1 complete.")
+        except Exception as e:
+            logger.error(f"Error during Primary Matcher ({primary_matcher_name}) execution: {e}", exc_info=True)
+            # Decide whether to continue to Pass 2 or re-raise depending on desired robustness
+            # For now, we log the error and continue if possible
 
         # --- Pass 2: Secondary Matcher (Conditional) --- 
         if self.secondary_matcher:
-            logger.info(f"Running Pass 2: Secondary Matcher ({type(self.secondary_matcher).__name__}) for transactions below {secondary_confidence_threshold:.0%} confidence...")
+            secondary_matcher_name = type(self.secondary_matcher).__name__
+            logger.info(f"Running Pass 2: Secondary Matcher ({secondary_matcher_name}) for transactions below {secondary_confidence_threshold:.0%} confidence...")
+            
             # Identify transactions needing the second pass
             transactions_for_secondary_pass = [
                 t for t in transactions 
@@ -92,12 +119,17 @@ class MatchingEngine:
             count = len(transactions_for_secondary_pass)
             if count > 0:
                  logger.info(f"Applying secondary matcher to {count} transactions.")
-                 # Process only the subset with the secondary matcher
-                 self.secondary_matcher.process_transactions(transactions_for_secondary_pass)
-                 logger.info("Pass 2 complete.")
+                 try:
+                     # Process only the subset with the secondary matcher
+                     self.secondary_matcher.process_transactions(transactions_for_secondary_pass)
+                     logger.info("Pass 2 complete.")
+                 except Exception as e:
+                    logger.error(f"Error during Secondary Matcher ({secondary_matcher_name}) execution: {e}", exc_info=True)
+                    # Log error and continue, as primary matches might still be valid
             else:
-                logger.info("No transactions required secondary matching.")
+                logger.info("Pass 2: No transactions required secondary matching.")
         else:
-            logger.info("No secondary matcher configured. Skipping Pass 2.")
+            logger.info("Pass 2: No secondary matcher configured. Skipping.")
 
+        logger.info(f"Transaction processing finished for {len(transactions)} transactions.")
         return transactions 
