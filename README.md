@@ -96,10 +96,10 @@ graph TD
 
     style Start fill:#ddd,stroke:#333,stroke-width:2px
     style End fill:#ddd,stroke:#333,stroke-width:2px
-    style LoadConfig fill:#f9f,stroke:#333,stroke-width:2px
-    style ReadInput fill:#f9f,stroke:#333,stroke-width:2px
-    style GenerateOutput fill:#f9f,stroke:#333,stroke-width:2px
-    style CheckThreshold fill:#ccf,stroke:#333,stroke-width:2px
+    style LoadConfig fill:#ffc,stroke:#333,stroke-width:2px
+    style ReadInput fill:#ffc,stroke:#333,stroke-width:2px
+    style GenerateOutput fill:#ffc,stroke:#333,stroke-width:2px
+    style CheckThreshold fill:#cff,stroke:#333,stroke-width:2px
 ```
 
 ### High-Level Sequence Diagram
