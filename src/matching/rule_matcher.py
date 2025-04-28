@@ -23,6 +23,7 @@ class RuleMatcher(Matcher):
     CONFIDENCE_EQUALS = 0.95
     CONFIDENCE_CONTAINS = 0.85
     # Add CONFIDENCE_REGEX if implementing regex rules
+    DEFAULT_RULE_PRIORITY = 10 # Default priority if not specified
     
     def __init__(self,
                  chart_of_accounts: ChartOfAccounts,
@@ -65,16 +66,31 @@ class RuleMatcher(Matcher):
         if loaded_rules is None: # Error during loading
             logger.error("Failed to load rules from store due to errors. Initializing empty rules.")
             return [] # Return empty list
-        elif isinstance(loaded_rules, list): # Successfully loaded a list
+        elif isinstance(loaded_rules, list):
             logger.info(f"Successfully loaded {len(loaded_rules)} rules from {self.rule_store.file_path}")
-            # Perform validation on each rule dict here if necessary
-            # e.g., check for required keys
+            # Validate essential keys + optional confidence
             valid_rules = []
-            for rule in loaded_rules:
-                if isinstance(rule, dict) and all(k in rule for k in ['condition_type', 'condition_value', 'account_number', 'priority']):
+            required_keys = {'condition_type', 'condition_value', 'account_number', 'priority'}
+            optional_keys = {'confidence'}
+            allowed_keys = required_keys.union(optional_keys)
+            
+            for i, rule in enumerate(loaded_rules):
+                if isinstance(rule, dict) and required_keys.issubset(rule.keys()):
+                    # Check for unexpected keys
+                    extra_keys = set(rule.keys()) - allowed_keys
+                    if extra_keys:
+                        logger.warning(f"Rule at index {i} contains unexpected keys: {extra_keys}. Allowed keys: {allowed_keys}")
+                        
+                    # Validate optional confidence if present
+                    if 'confidence' in rule:
+                        conf_val = rule['confidence']
+                        if not isinstance(conf_val, (float, int)) or not (0.0 <= conf_val <= 1.0):
+                             logger.warning(f"Rule at index {i} has invalid confidence value: {conf_val}. Must be float between 0.0 and 1.0. Ignoring rule's confidence value.")
+                             # We don't skip the rule, just ignore its confidence value later
+                    
                     valid_rules.append(rule)
                 else:
-                    logger.warning(f"Skipping invalid rule format: {rule}")
+                    logger.warning(f"Skipping invalid rule format at index {i}: {rule}. Missing one of required keys: {required_keys}")
             return valid_rules
         else:
             # This case should ideally not happen if RuleStore.load works correctly
@@ -93,11 +109,11 @@ class RuleMatcher(Matcher):
         highest_confidence: float = -1.0 # Use -1 to ensure first valid match is chosen
         highest_priority: int = -1
 
-        # Iterate through the list of rules
+        # Iterate through all defined rules
         for rule in self.rules:
             match = False
-            confidence = 0.0 # Default confidence for rules?
-            priority = rule.get('priority', 0) # Default priority if missing
+            rule_confidence = -1.0 # Use -1 to indicate not set yet
+            priority = rule.get('priority', self.DEFAULT_RULE_PRIORITY) # Use constant for default
             condition_type = rule.get('condition_type')
             condition_value = rule.get('condition_value')
             account_number = rule.get('account_number')
@@ -106,46 +122,58 @@ class RuleMatcher(Matcher):
                 logger.warning(f"Skipping rule due to missing fields: {rule}")
                 continue
 
-            # --- Rule Condition Matching Logic ---
+            # --- Evaluate Rule Condition & Determine Confidence ---
             try:
+                rule_has_custom_confidence = False
+                if 'confidence' in rule:
+                    conf_val = rule['confidence']
+                    if isinstance(conf_val, (float, int)) and (0.0 <= conf_val <= 1.0):
+                        rule_confidence = float(conf_val)
+                        rule_has_custom_confidence = True
+                    # else: Invalid custom confidence logged during load, will use default
+                
+                # Apply condition type logic
                 if condition_type == 'description_equals':
                     if mapped_description == condition_value:
                         match = True
-                        confidence = self.CONFIDENCE_EQUALS
+                        if not rule_has_custom_confidence:
+                            rule_confidence = self.CONFIDENCE_EQUALS
                 elif condition_type == 'description_contains':
-                    # Ensure condition_value is treated as string
                     if isinstance(condition_value, str) and condition_value in mapped_description:
                         match = True
-                        confidence = self.CONFIDENCE_CONTAINS
-                # Add elif for 'description_matches_regex' here if needed
+                        if not rule_has_custom_confidence:
+                             rule_confidence = self.CONFIDENCE_CONTAINS
+                # TODO: Implement 'description_matches_regex' condition type
                 else:
-                    logger.warning(f"Unsupported condition_type '{condition_type}' in rule: {rule}")
-                    continue
+                    logger.warning(f"Unsupported condition_type '{condition_type}' encountered in rule: {rule}")
+                    continue 
+
+                # Ensure confidence was set if match is True
+                if match and rule_confidence < 0.0:
+                     logger.error(f"Internal logic error: Match is True but confidence not set for rule: {rule}")
+                     match = False # Prevent match with unset confidence
+                     
             except Exception as e:
                 logger.error(f"Error evaluating rule condition for rule {rule}: {e}", exc_info=True)
                 continue
-            # --- End Rule Condition Matching ---
+            # --- End Rule Condition Evaluation ---
 
             if match:
-                # Find the account object using the correct method name
                 potential_account = self.chart_of_accounts.find_account(str(account_number))
+                
                 if potential_account and self._validate_match(transaction, potential_account):
-                    # Check priority and confidence
+                    # --- Conflict Resolution: Priority then Confidence ---
                     if priority > highest_priority:
                         highest_priority = priority
-                        highest_confidence = confidence 
+                        highest_confidence = rule_confidence # Use the determined rule_confidence
                         best_match_account = potential_account
-                    elif priority == highest_priority and confidence > highest_confidence:
-                        # If same priority, higher confidence wins
-                        highest_confidence = confidence
+                    elif priority == highest_priority and rule_confidence > highest_confidence:
+                        highest_confidence = rule_confidence # Use the determined rule_confidence
                         best_match_account = potential_account
                         
-        # Apply the best match found
+        # --- Apply the final best match found --- 
         if best_match_account:
-            transaction.add_match(best_match_account, highest_confidence, source=MatchSource.RULE) 
-            # Note: add_match handles logic for primary vs alternative matches
-            #       and MatchSource isn't part of its signature currently.
-            # We might need to adjust Transaction.add_match or how we record source later.
+            transaction.add_match(best_match_account, highest_confidence, source=MatchSource.RULE)
             # logger.debug(f"Rule matched {transaction.description} to {best_match_account.number} (Conf: {highest_confidence:.2f}, Prio: {highest_priority})")
         # else: No rule match found
             # logger.debug(f"No rule match found for {transaction.description}")

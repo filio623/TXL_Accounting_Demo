@@ -305,6 +305,17 @@ class LLMMatcher(Matcher):
             # Parsing failed to return a valid account number
             logger.warning(f"LLM match failed for Tx '{transaction.description}': No valid account number parsed from response.")
 
-    # get_match_confidence method is no longer needed as confidence is parsed directly
-    # def get_match_confidence(self, transaction: Transaction, account: Account) -> float:
-    #    ...
+    # Placeholder implementation to satisfy the abstract base class
+    def get_match_confidence(self, transaction: Transaction, account: Account) -> float:
+        """
+        DEPRECATED/NEEDS REVIEW:
+        Placeholder to satisfy the Matcher base class abstract method requirement.
+        Confidence for LLM matches is determined during the API call and parsing.
+        Returns 0.0.
+        """
+        # TODO: Review if this method needs any specific logic or can be removed 
+        # if the Matcher base class definition is changed.
+        logger.debug(f"LLMMatcher.get_match_confidence called for Tx: {transaction.description} / Acc: {account.number} - Returning 0.0 (Method inactive)")
+        return 0.0
+
+    # _validate_match is inherited from Matcher base class if not overridden
